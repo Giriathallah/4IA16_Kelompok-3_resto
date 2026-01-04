@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  admin
+  user
+}
+
+enum OAuthProvider {
+  discord
+  github
+  google
+}
+
+/** HANYA 3 kategori sesuai permintaan */
+enum Category {
+  MAIN       // Makanan Utama
+  APPETIZER
+  DRINK
+}
+
+enum StockType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum PaymentMethod {
+  CASH
+  QRIS
+  CARD
+  BANK_TRANSFER
+}
+
+enum OrderStatus {
+  OPEN
+  AWAITING_PAYMENT
+  PAID
+  CANCELLED
+}
+
+enum DiningType {
+  DINE_IN
+  TAKE_AWAY
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  email         String   @unique
+  emailVerified DateTime?
+  password      String?
+  salt          String?
+  avatarUrl     String?
+  role          UserRole @default(user)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  oAuthAccounts      UserOAuthAccount[]
+  verificationTokens VerificationToken[]
+  orders             Order[]
+  cart               Cart?
+
+  @@index([role])
+  @@index([createdAt])
+}
+
+model UserOAuthAccount {
+  id                String        @id @default(uuid()) @db.Uuid
+  userId            String        @db.Uuid
+  provider          OAuthProvider
+  providerAccountId String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model VerificationToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId])
+  @@index([identifier])
+}
+
+model Product {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  price     Int
+  category  Category
+  stock     Int      @default(0)
+  isActive  Boolean  @default(true)
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems     OrderItem[]
+  stockMovements StockMovement[]
+  cartItems      CartItem[]
+
+  @@index([name])
+  @@index([category])
+  @@index([isActive, stock])
+  @@index([createdAt])
+}
+
+model StockMovement {
+  id         String   @id @default(uuid()) @db.Uuid
+  productId  String   @db.Uuid
+  type       StockType
+  qty        Int
+  note       String?
+  createdAt  DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([productId, createdAt])
+  @@index([type])
+}
+
+model Cart {
+  id          String   @id @default(uuid()) @db.Uuid
+  customerId  String   @unique @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer User      @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  items    CartItem[]
+
+  @@index([updatedAt])
+}
+
+model CartItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  cartId    String  @db.Uuid
+  productId String  @db.Uuid
+  qty       Int
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([cartId])
+  @@index([productId])
+  @@unique([cartId, productId])
+}
+
+model Order {
+  id           String      @id @default(uuid()) @db.Uuid
+  code         String      @unique
+  queueNumber  String
+  serviceDate  DateTime    @default(now())
+  status       OrderStatus @default(OPEN)
+  diningType   DiningType
+  subtotal     Int         @default(0)
+  discount     Int         @default(0)
+  tax          Int         @default(0)
+  total        Int         @default(0)
+  createdAt    DateTime    @default(now())
+  closedAt     DateTime?
+  customerId   String      @db.Uuid
+
+  customer  User        @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  items     OrderItem[]
+  payments  Payment[]
+
+  @@unique([serviceDate, queueNumber])
+  @@index([customerId])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String @id @default(uuid()) @db.Uuid
+  orderId   String @db.Uuid
+  productId String @db.Uuid
+  qty       Int
+  price     Int
+  total     Int
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Payment {
+  id        String        @id @default(uuid()) @db.Uuid
+  orderId   String        @db.Uuid
+  method    PaymentMethod
+  amount    Int
+  refCode   String?       @unique
+  paidAt    DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([orderId])
+  @@index([method, paidAt])
+}
