@@ -1,4 +1,10 @@
-// app/api/checkout/route.ts
+/**
+ * @fileoverview API Route untuk proses checkout order
+ * @module api/customer/checkout
+ * @description Endpoint untuk memproses checkout dari keranjang menjadi order,
+ *              mendukung pembayaran CASH dan CASHLESS (Midtrans)
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
@@ -7,25 +13,46 @@ import midtransClient from "midtrans-client";
 
 export const runtime = "nodejs";
 
-// Body schema
+/**
+ * Schema validasi untuk body request checkout
+ * @constant
+ */
 const bodySchema = z.object({
   diningType: z.enum(["DINE_IN", "TAKE_AWAY"]),
   paymentChoice: z.enum(["CASH", "CASHLESS"]),
 });
 
+/**
+ * Menghitung awal hari (00:00:00.000)
+ * @param {Date} [d=new Date()] - Tanggal yang akan dihitung
+ * @returns {Date} Tanggal dengan waktu 00:00:00.000
+ * @private
+ */
 function startOfDay(d = new Date()) {
   const s = new Date(d);
   s.setHours(0, 0, 0, 0);
   return s;
 }
+
+/**
+ * Menghitung akhir hari (23:59:59.999)
+ * @param {Date} [d=new Date()] - Tanggal yang akan dihitung
+ * @returns {Date} Tanggal dengan waktu 23:59:59.999
+ * @private
+ */
 function endOfDay(d = new Date()) {
   const e = new Date(d);
   e.setHours(23, 59, 59, 999);
   return e;
 }
 
+/**
+ * Mengambil nomor antrian untuk hari ini
+ * Nomor antrian dihitung berdasarkan jumlah order pada hari yang sama
+ * @returns {Promise<string>} Nomor antrian dengan format 3 digit (e.g., "001", "042")
+ * @private
+ */
 async function getTodayQueueNumber() {
-  // Cari jumlah order hari ini (atau bisa ambil MAX dan +1)
   const todayStart = startOfDay();
   const todayEnd = endOfDay();
   const count = await prisma.order.count({
@@ -36,10 +63,18 @@ async function getTodayQueueNumber() {
       },
     },
   });
-  // Simple: nomor antrian = count + 1 (string)
   return String(count + 1).padStart(3, "0");
 }
 
+/**
+ * Membuat kode order unik berdasarkan tanggal dan nomor antrian
+ * @param {string} queueNumber - Nomor antrian (3 digit)
+ * @returns {string} Kode order dengan format: ORD-YYYYMMDD-XXX
+ * @example
+ * // Returns: "ORD-20240117-001"
+ * makeOrderCode("001")
+ * @private
+ */
 function makeOrderCode(queueNumber: string) {
   const yyyy = new Date().getFullYear().toString();
   const mm = String(new Date().getMonth() + 1).padStart(2, "0");
@@ -47,6 +82,36 @@ function makeOrderCode(queueNumber: string) {
   return `ORD-${yyyy}${mm}${dd}-${queueNumber}`;
 }
 
+/**
+ * POST /api/customer/checkout
+ *
+ * Memproses checkout dari keranjang menjadi order baru.
+ * Mendukung dua metode pembayaran: CASH dan CASHLESS (Midtrans).
+ *
+ * @param {NextRequest} req - Request object dari Next.js
+ *
+ * @requestBody {Object} body - Data checkout
+ * @requestBody {string} body.diningType - Jenis pesanan: "DINE_IN" | "TAKE_AWAY"
+ * @requestBody {string} body.paymentChoice - Metode pembayaran: "CASH" | "CASHLESS"
+ *
+ * @returns {Promise<Response>} JSON response:
+ *   - Sukses CASH: { ok: true, orderId, code, total, payment: { method: "CASH" } }
+ *   - Sukses CASHLESS: { ok: true, orderId, code, mid, total, payment: { method: "CASHLESS", snapToken } }
+ *   - Error (401): Unauthorized - User belum login
+ *   - Error (409): Keranjang kosong / Produk tidak tersedia / Stok tidak cukup
+ *   - Error (422): Payload tidak valid
+ *   - Error (500): Server error / Midtrans tidak dikonfigurasi
+ *
+ * @description
+ * Proses checkout meliputi:
+ * 1. Validasi user login
+ * 2. Validasi payload request
+ * 3. Ambil dan validasi item keranjang (stok dan status aktif)
+ * 4. Hitung subtotal, discount, tax, dan total
+ * 5. Buat order dan order items dalam transaction
+ * 6. Hapus keranjang setelah checkout berhasil
+ * 7. Jika CASHLESS, generate Midtrans Snap token
+ */
 export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser({ withFullUser: false });

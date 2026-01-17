@@ -1,9 +1,24 @@
+/**
+ * @fileoverview API Routes untuk manajemen keranjang belanja (cart)
+ * @module api/cart
+ * @description Endpoint untuk operasi keranjang: lihat, tambah item, dan kosongkan cart
+ */
+
 import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { json } from "@/lib/http";
 import { addToCartSchema } from "@/lib/validators/cart";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+
 export const runtime = "nodejs";
+
+/**
+ * Helper function untuk memastikan cart user ada
+ *
+ * @param {string} userId - ID user yang sedang login
+ * @returns {Promise<string>} ID cart (baru dibuat jika belum ada)
+ * @private
+ */
 
 // Ambil/auto-buat cart untuk user
 async function ensureCart(userId: string) {
@@ -16,7 +31,22 @@ async function ensureCart(userId: string) {
   return cart.id;
 }
 
-/** GET /api/cart  → daftar item cart user */
+/**
+ * GET /api/cart
+ *
+ * Mengambil daftar item dalam keranjang user yang sedang login.
+ *
+ * @param {NextRequest} _req - Request object (tidak digunakan)
+ *
+ * @returns {Promise<Response>} JSON response:
+ *   - items: Array item dengan id, name, price, image, category, isActive, stock, quantity
+ *   - updatedAt: Timestamp terakhir cart diupdate
+ *
+ * @throws {401} Unauthorized - Jika user belum login
+ *
+ * @example
+ * // Response: { items: [{ id: "...", name: "Nasi Goreng", price: 25000, quantity: 2 }], updatedAt: "2024-01-17T..." }
+ */
 export async function GET(_req: NextRequest) {
   const user = await getCurrentUser({ withFullUser: false });
   if (!user) return new Response("Unauthorized", { status: 401 });
@@ -61,7 +91,27 @@ export async function GET(_req: NextRequest) {
   return json({ items: lines, updatedAt: cart?.updatedAt ?? null });
 }
 
-/** POST /api/cart  → tambah item (productId, qty) */
+/**
+ * POST /api/cart
+ *
+ * Menambahkan item ke keranjang user. Jika item sudah ada, quantity akan ditambahkan.
+ *
+ * @param {NextRequest} req - Request object dari Next.js
+ *
+ * @requestBody {Object} body - Data item yang ditambahkan
+ * @requestBody {string} body.productId - ID produk yang akan ditambahkan (wajib)
+ * @requestBody {number} body.qty - Jumlah item yang ditambahkan (wajib, minimal 1)
+ *
+ * @returns {Promise<Response>} JSON response:
+ *   - Sukses (200): { ok: true }
+ *   - Error (401): Unauthorized - User belum login
+ *   - Error (409): Product not available - Produk tidak aktif
+ *   - Error (422): Invalid payload - Validasi gagal
+ *
+ * @example
+ * // Request: { "productId": "uuid-produk", "qty": 2 }
+ * // Response: { "ok": true }
+ */
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser({ withFullUser: false });
   if (!user) return new Response("Unauthorized", { status: 401 });
@@ -113,7 +163,21 @@ export async function POST(req: NextRequest) {
   return json({ ok: true });
 }
 
-/** DELETE /api/cart → kosongkan cart user */
+/**
+ * DELETE /api/cart
+ *
+ * Mengosongkan seluruh keranjang user yang sedang login.
+ * Menghapus cart beserta semua item di dalamnya.
+ *
+ * @param {NextRequest} _req - Request object (tidak digunakan)
+ *
+ * @returns {Promise<Response>} JSON response:
+ *   - Sukses (200): { ok: true }
+ *   - Error (401): Unauthorized - User belum login
+ *
+ * @example
+ * // Response: { "ok": true }
+ */
 export async function DELETE(_req: NextRequest) {
   const user = await getCurrentUser({ withFullUser: false });
   if (!user) return new Response("Unauthorized", { status: 401 });

@@ -1,7 +1,29 @@
+/**
+ * @fileoverview API Route untuk detail order berdasarkan kode
+ * @module api/customer/orders/[code]
+ * @description Endpoint untuk melihat detail order dan menandai order sebagai PAID (CASH)
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 
+/**
+ * GET /api/customer/orders/[code]
+ *
+ * Mengambil detail order berdasarkan kode order.
+ * Hanya menampilkan order milik user yang sedang login.
+ *
+ * @param {NextRequest} _req - Request object (tidak digunakan)
+ * @param {Object} ctx - Context object dengan params
+ * @param {Promise<{code: string}>} ctx.params - Parameter route dengan kode order
+ *
+ * @returns {Promise<Response>} JSON response:
+ *   - Sukses: { code, status, total, items: [{ productName, qty, price, total }] }
+ *   - Error (401): Unauthorized - User belum login
+ *   - Error (404): Order tidak ditemukan
+ *   - Error (500): Server error
+ */
 export async function GET(
   _req: NextRequest,
   ctx: { params: Promise<{ code: string }> }
@@ -52,6 +74,28 @@ export async function GET(
   }
 }
 
+/**
+ * POST /api/customer/orders/[code]
+ *
+ * Menandai order sebagai PAID (untuk pembayaran CASH).
+ * Mengurangi stok produk dan mengupdate status order dalam satu transaksi.
+ *
+ * @param {NextRequest} _req - Request object (tidak digunakan)
+ * @param {Object} ctx - Context object dengan params
+ * @param {Promise<{code: string}>} ctx.params - Parameter route dengan kode order
+ *
+ * @returns {Promise<Response>} JSON response:
+ *   - Sukses: { ok: true }
+ *   - Already paid: { ok: true, already: true }
+ *   - Error (404): Order tidak ditemukan
+ *   - Error (500): Server error
+ *
+ * @description
+ * Proses pembayaran meliputi:
+ * 1. Cari order berdasarkan kode
+ * 2. Cek apakah sudah PAID (return early jika sudah)
+ * 3. Dalam transaction: kurangi stok produk, update status ke PAID
+ */
 export async function POST(
   _req: NextRequest,
   ctx: { params: Promise<{ code: string }> }

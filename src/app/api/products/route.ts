@@ -1,4 +1,10 @@
-// app/api/products/route.ts
+/**
+ * @fileoverview API Routes untuk manajemen produk restoran
+ * @module api/products
+ * @description Endpoint untuk operasi CRUD produk dengan fitur filtering,
+ *              sorting, dan pagination
+ */
+
 import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { json, error, parsePagination } from "@/lib/http";
@@ -8,6 +14,30 @@ import { Category } from "@/generated/prisma";
 
 export const runtime = "nodejs";
 
+/**
+ * GET /api/products
+ *
+ * Mengambil daftar produk dengan berbagai filter dan opsi sorting.
+ *
+ * @param {NextRequest} req - Request object dari Next.js
+ *
+ * @queryParam {string} [q] - Kata kunci pencarian nama produk (case-insensitive)
+ * @queryParam {string} [category] - Filter kategori: MAIN | APPETIZER | DRINK
+ * @queryParam {string} [active] - Filter status aktif: "true" | "false"
+ * @queryParam {string} [sort] - Opsi sorting: name_asc | name_desc | price_asc | price_desc | createdAt_desc
+ * @queryParam {number} [page=1] - Nomor halaman untuk pagination
+ * @queryParam {number} [perPage=10] - Jumlah item per halaman
+ *
+ * @returns {Promise<Response>} JSON response dengan format:
+ *   - items: Array produk dengan id, name, price, category, stock, isActive, imageUrl, timestamps
+ *   - page: Halaman saat ini
+ *   - perPage: Jumlah item per halaman
+ *   - total: Total jumlah produk yang match dengan filter
+ *
+ * @example
+ * // Request: GET /api/products?q=nasi&category=MAIN&active=true&sort=price_asc&page=1&perPage=10
+ * // Response: { items: [...], page: 1, perPage: 10, total: 25 }
+ */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") ?? "").trim();
@@ -35,12 +65,12 @@ export async function GET(req: NextRequest) {
     sortParam === "name_asc"
       ? { name: "asc" }
       : sortParam === "name_desc"
-      ? { name: "desc" }
-      : sortParam === "price_asc"
-      ? { price: "asc" }
-      : sortParam === "price_desc"
-      ? { price: "desc" }
-      : { createdAt: "desc" }; // default
+        ? { name: "desc" }
+        : sortParam === "price_asc"
+          ? { price: "asc" }
+          : sortParam === "price_desc"
+            ? { price: "desc" }
+            : { createdAt: "desc" }; // default
 
   const [items, total] = await Promise.all([
     prisma.product.findMany({
@@ -66,6 +96,30 @@ export async function GET(req: NextRequest) {
   return json({ items, page, perPage, total });
 }
 
+/**
+ * POST /api/products
+ *
+ * Membuat produk baru di database.
+ *
+ * @param {NextRequest} req - Request object dari Next.js
+ *
+ * @requestBody {Object} body - Data produk baru
+ * @requestBody {string} body.name - Nama produk (wajib)
+ * @requestBody {number} body.price - Harga produk dalam Rupiah (wajib)
+ * @requestBody {string} body.category - Kategori: MAIN | APPETIZER | DRINK (wajib)
+ * @requestBody {number} [body.stock=0] - Stok awal produk
+ * @requestBody {boolean} [body.isActive=true] - Status aktif produk
+ * @requestBody {string} [body.imageUrl] - URL gambar produk (opsional)
+ *
+ * @returns {Promise<Response>} JSON response:
+ *   - Sukses (201): { id: string } - ID produk yang baru dibuat
+ *   - Error (422): { error: string, issues: object } - Validasi gagal
+ *
+ * @example
+ * // Request body:
+ * // { "name": "Nasi Goreng", "price": 25000, "category": "MAIN", "stock": 50 }
+ * // Response: { "id": "uuid-produk-baru" }
+ */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
 
